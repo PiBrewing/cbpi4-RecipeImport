@@ -60,32 +60,15 @@ class RecipeImport(CBPiExtension):
     def allowed_file(self, filename, extension):
         return '.' in filename and filename.rsplit('.', 1)[1] in set([extension])
 
-    def get(self):
-        try:
-            self.path = os.path.join(".", 'config', "upload", "kbh.db")
-            conn = sqlite3.connect(self.path)
-            c = conn.cursor()
-            c.execute('SELECT ID, Sudname, Status FROM Sud')
-            data = c.fetchall()
-            result = []
-            for row in data:
-               result.append({"id": row[0], "name": row[1], "brewed": row[2]})
-            return json.dumps(result)
-        except:
-            pass
-        finally:
-            if conn:
-                conn.close()
-
-
     @request_mapping(path='/', method="POST", auth_required=False)
     async def RecipeImport(self, request):
         data = await request.post()
-        if 'xml' in data:
+        logger.info(data)
+        if 'xml_upload' in data:
             try:
-                beerxml = data['xml']
+                beerxml = data['xml_upload']
                 filename = beerxml.filename
-                beerxml_file = data['xml'].file
+                beerxml_file = data['xml_upload'].file
                 content = beerxml_file.read().decode()
                 if beerxml_file and self.allowed_file(filename, 'xml'):
                     self.path = os.path.join(".", 'config', "upload", "beer.xml")
@@ -96,9 +79,9 @@ class RecipeImport(CBPiExtension):
             except: 
                 pass
 
-        elif 'kbh_upload' in data:
+        if 'kbh_upload' in data:
             try:
-                kbh = data['kbh']
+                kbh = data['kbh_upload']
                 filename = kbh.filename
                 logger.info(filename)
                 kbh_file = kbh.file
@@ -111,12 +94,7 @@ class RecipeImport(CBPiExtension):
                     f.close()
             except:
                 pass
-
-        elif 'kbh_select' in data:
-            result = self.get()
-            print(result)
-            web.json_response(result)
-
+        self.cbpi.plugin.register("RecipeLoad", RecipeLoad)
         return web.HTTPFound('static/index.html')
 
     async def run(self):
@@ -257,7 +235,7 @@ class RecipeLoad(CBPiActor):
                 step_kettle = self.id
                 step_name = "MashIn"
                 step_timer = "0"
-                step_temp = str(row[0])
+                step_temp = str(int(row[0]))
                 sensor = self.kettle.sensor
                 step_type = self.mashin if self.mashin != "" else "MashStep"
                 AutoMode = "Yes" if step_type == "BM_MashInStep" else "No"
@@ -265,8 +243,8 @@ class RecipeLoad(CBPiActor):
 
                 for row in c.execute('SELECT Name, Temp, Dauer FROM Rasten WHERE Typ <> 0 AND SudID = ?', (Recipe_ID,)):
                     step_name = str(row[0])
-                    step_temp = str(row[1])
-                    step_timer = str(row[2])
+                    step_temp = str(int(row[1]))
+                    step_timer = str(int(row[2]))
                     step_type = self.mash if self.mash != "" else "MashStep"
                     AutoMode = "Yes" if step_type == "BM_MashStep" else "No"
                     await self.create_step(step_type, step_name, step_kettle, step_timer, step_temp, AutoMode, sensor)
@@ -286,7 +264,7 @@ class RecipeLoad(CBPiActor):
 
                 c.execute('SELECT Kochdauer FROM Sud WHERE ID = ?', (Recipe_ID,))
                 row = c.fetchone()
-                step_time = str(row[0])
+                step_time = str(int(row[0]))
 
                 FirstWortFlag = self.getFirstWortKBH(Recipe_ID)
 
@@ -295,7 +273,7 @@ class RecipeLoad(CBPiActor):
                 step_kettle = self.id
                 step_type = self.boil if self.boil != "" else "BoilStep"
                 step_name = "Boil Step"
-                step_temp = self.BoilTemp
+                step_temp = int(self.BoilTemp)
                 AutoMode = "Yes" if step_type == "BM_BoilStep" else "No"
                 sensor = self.kettle.sensor
                 Notification = ""
@@ -323,7 +301,7 @@ class RecipeLoad(CBPiActor):
                         cooldown_sensor = self.kettle.sensor  # fall back to kettle sensor if no other sensor is specified
                     step_kettle = self.id
                     step_timer = ""                
-                    step_temp = self.CoolDownTemp
+                    step_temp = int(self.CoolDownTemp)
             
                 await self.create_step(step_type, step_name, step_kettle, step_timer, step_temp, AutoMode, cooldown_sensor)
 
