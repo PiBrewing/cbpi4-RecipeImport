@@ -1,22 +1,22 @@
-# CraftBeerPi4 Plugin to import Beer.XML and KBHv2 recipes
+# CraftBeerPi4 Plugin to create Beer.XML, KBHv2 and Brewfather App recipes
 
-## Currently, the latest cbpi4 version from the GIT repo is required. Some changes in the ui are also required for better usability
+## Currently, the latest cbpi4 and cbpi4ui forks  from my GIT repo are required. 
 
-## This plugin is still BETA.
+## This plugin is an example on how to create recipes. It basically has the same functionality as the included recipe creation but can be modified to the user requirements.
 
-- Beer.xml file or kbh database needs to be uploaded from other webpage
-	- You need to navigate to IP_OF_CBPI:PORT/cbpi_RecipeImport/static/index.html
+- Beer.xml file or kbh database needs to be uploaded via user interface
+- BF recipe can be accessed directly via user interface (paid BF account required)
 - Please check also cbpi4 Settings as several parameters will be added by this plugin.
-- The plugin is based on an actor and needs to be activated in the hardware section under actors
-- Once created, add the actor to your dashboard
-- Recipe creation for uploaded xml file or kbh database recipes can be done by hitting the 3 dots next to the actor.
-	- So called Actor actions are used for this feature
-	- It is also recommended to install the cbpi4-BM_Steps plugin for full functionality
+	- If you want to use this plugin instead of the native recipe creation capabilities, you need to change the settings parameter 'RECIPE_CREATION_PATH' to 'creation'
+- No other changes are required.
+- This allows the user to modify the plugin to his needs and to combine steps as required for his equipment. 
+- No change of cbpi4 is required
 
-### Please note: Once the recipe or database is uploaded, cbpi does not update the selection in the actor actions. You need to restart cbpi currently to see the recipe. 
 
 - Changelog:
 
-** 24.03.21:
+** 12.07.21:
+	- New version that can be used with the native upload capabilities of my fork
 
+** 24.03.21:
 	- Initial release
