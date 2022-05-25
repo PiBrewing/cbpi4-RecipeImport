@@ -17,10 +17,7 @@ setup(name='cbpi4-RecipeImport',
         # If any package contains *.txt or *.rst files, include them:
       '': ['*.txt', '*.rst', '*.yaml'],
       'cbpi4-RecipeImport': ['*','*.txt', '*.rst', '*.yaml']},
-      packages=['cbpi4-RecipeImport'],
-      install_requires=[
-	'cbpi>=4.0.0.33',
-      ],      
+      packages=['cbpi4-RecipeImport'],  
       long_description=long_description,
       long_description_content_type='text/markdown'
      )
