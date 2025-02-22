@@ -1120,7 +1120,7 @@ class RecipeCreation(CBPiExtension):
         cooldown_sensor = ""
         step_temp = ""
         step_timer = time
-        if step_type == "CooldownStep":
+        if step_type.find("Cooldown") != -1:
             cooldown_sensor = self.cbpi.config.get("steps_cooldown_sensor", None)
             if cooldown_sensor is None or cooldown_sensor == "":
                 cooldown_sensor = (

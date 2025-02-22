@@ -7,7 +7,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(name='cbpi4-RecipeImport',
-      version='1.0.0',
+      version='1.0.1',
       description='CraftBeerPi4 Recipe Creation Plugin Example',
       author='Alexander Vollkopf',
       author_email='avollkopf@web.de',
