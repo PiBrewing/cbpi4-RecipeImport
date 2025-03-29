@@ -24,16 +24,20 @@ from voluptuous.schema_builder import message
 logger = logging.getLogger(__name__)
 
 
+# current default whirlpool temp currently 80*C (176*F) for 20 min
+
+
+
 class RecipeCreation(CBPiExtension):
     def __init__(self, cbpi):
         self.cbpi = cbpi
         path = os.path.dirname(__file__)
-
         # register new route for recipe creation
         # this needs to be set in the parameter RECIPE_CREATION_PATH in the global cbpi setting to be able to use the plugin
         # After the change, the plugin replaces the recipe cbpi4 conmtroller for recipe creation
         self.cbpi.register(self, "/creation")
         self._task = asyncio.create_task(self.run())
+
 
     async def run(self):
         logger.info("Starting Recipe Import Plugin")
@@ -227,7 +231,7 @@ class RecipeCreation(CBPiExtension):
                     await self.create_step(step_string)
 
                 # create a boil step with hop alarms and alarm for first wort hops
-                Hops = self.getBoilAlerts(hops, miscs, "kbh")
+                Hops , Whirlpool= self.getBoilAlerts(hops, miscs, "kbh")
                 step_type = self.boil if self.boil != "" else "BoilStep"
                 step_string = {
                     "name": "Boil Step",
@@ -512,7 +516,7 @@ class RecipeCreation(CBPiExtension):
                 await self.create_step(step_string)
 
                 # Boil step including hop alarms and alarm for first wort hops -> Automode is set tu yes
-                Hops = self.getBoilAlerts(hops, miscs, "json")
+                Hops, Whirlpool = self.getBoilAlerts(hops, miscs, "json")
                 step_kettle = self.boilid
                 step_type = self.boil if self.boil != "" else "BoilStep"
                 step_time = str(int(boil_time))
@@ -699,7 +703,7 @@ class RecipeCreation(CBPiExtension):
                     await self.create_step(step_string)
 
                 # Boil step including hop alarms and alarm for first wort hops -> Automode is set tu yes
-                Hops = self.getBoilAlerts(hops, miscs, "xml")
+                Hops , Whirlpool = self.getBoilAlerts(hops, miscs, "xml")
                 step_kettle = self.boilid
                 step_type = self.boil if self.boil != "" else "BoilStep"
                 step_time = str(int(boil_time))
@@ -837,6 +841,11 @@ class RecipeCreation(CBPiExtension):
                 BoilTime = bf_recipe["boilTime"]
                 mash_steps = bf_recipe["mash"]["steps"]
                 hops = bf_recipe["hops"]
+                #test= json.dumps(hops, indent=4)
+                #with open("brewfather.json", "w") as outfile:
+                #    outfile.write(test)
+                # parse the json data and extract the relevant information
+
                 try:
                     miscs = bf_recipe["miscs"]
                 except:
@@ -967,7 +976,7 @@ class RecipeCreation(CBPiExtension):
                 await self.create_step(step_string)
 
                 # Boil step including hop alarms and alarm for first wort hops -> Automode is set tu yes
-                Hops = self.getBoilAlerts(hops, miscs, "bf")
+                Hops, Whirlpool = self.getBoilAlerts(hops, miscs, "bf")
 
                 step_kettle = self.boilid
                 step_time = str(int(BoilTime))
@@ -1007,6 +1016,56 @@ class RecipeCreation(CBPiExtension):
 
                 await self.create_step(step_string)
 
+                # describe whirlpool hop addition
+                # whirlpool hops are added at the end of the boil step
+                # and the kettle is cooled down to the whirlpool temperature
+                # the whirlpool temperature is set in the recipe and is used to cool down the kettle
+                
+                if Whirlpool != []:
+                    logging.info(
+                        "Whirlpool Temp: {}".format(Whirlpool)
+                    )
+
+                    step_type = self.cooldown
+                    step_name = "CoolDown for Whirlpool Hop"
+                    cooldown_sensor = ""
+                    step_temp = ""
+                    step_timer = ""
+
+                    if step_type.find("Cooldown") != -1:
+                        cooldown_sensor = (
+                                self.boilkettle.sensor
+                            )  # fall back to boilkettle sensor if no other sensor is specified
+                        step_temp = float(Whirlpool)
+                        step_string = {
+                            "name": "Cooldown for Whirlpool Hop",
+                            "props": {
+                                "Kettle": self.boilid,
+                                "Timer": step_timer,
+                                "Temp": step_temp,
+                                "Sensor": cooldown_sensor,
+                                "Actor": self.CoolDownActor,
+                            },
+                            "status_text": "",
+                            "status": "I",
+                            "type": step_type,
+                        }
+                        await self.create_step(step_string)
+
+                    step_string = {
+                        "name": "Whirlpool Hop",
+                        "props": {
+                            "AutoNext": "No",
+                            "Kettle": self.id,
+                            "Notification": "Target Whirlpool temperature reached. Please add Whirlpool hops.",
+                        },
+                        "status_text": "",
+                        "status": "I",
+                        "type": "NotificationStep",
+                    }
+                    await self.create_step(step_string)
+
+
                 await self.create_Whirlpool_Cooldown()
 
                 self.cbpi.notify(
@@ -1021,6 +1080,7 @@ class RecipeCreation(CBPiExtension):
 
     def getBoilAlerts(self, hops, miscs, recipe_type):
         alerts = []
+        whirlpool = []
         for hop in hops:
             if recipe_type == "xml":
                 use = hop.find("USE").text
@@ -1030,9 +1090,18 @@ class RecipeCreation(CBPiExtension):
                 alerts.append([float(hop.find("TIME").text), hop.find("NAME").text])
             elif recipe_type == "bf":
                 use = hop["use"]
-                if use != "Aroma" and use != "Boil":
-                    continue
-                alerts.append([float(hop["time"]), hop["name"]])  ## TODO: Testing
+                if use == "Boil":
+                    alerts.append([float(hop["time"]), hop["name"]])  ## TODO: Testing
+                elif use == "Aroma":
+                    try:
+                        if self.TEMP_UNIT == "C":
+                            temp = float(hop["temp"])
+                        else:
+                            temp = round(9.0 / 5.0 * float(hop["temp"]) + 32, 2)
+                    except:
+                        temp = 80 if self.TEMP_UNIT == "C" else 176
+                    whirlpool.append([temp, hop["name"]])
+
             elif recipe_type == "kbh":
                 alerts.append([float(hop[0]), hop[1]])
             elif recipe_type == "json":
@@ -1071,7 +1140,13 @@ class RecipeCreation(CBPiExtension):
                     hop_alerts[i] = alerts[i]
             except:
                 pass
-        return hop_alerts
+        whirlpool_temps = sorted(whirlpool, key=lambda x: x[0], reverse=True)
+        try:
+            whirlpool_temp = whirlpool_temps[0][0]
+        except:
+            whirlpool_temp = []
+        logging.info("Whirlpool Temp: {}".format(whirlpool_temp))
+        return hop_alerts, whirlpool_temp
 
     def getFirstWort(self, hops, recipe_type):
         alert = "No"
