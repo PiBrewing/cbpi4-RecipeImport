@@ -14,7 +14,7 @@
 
 ## Changelog:
 
-- 30.03.25: (1.1.0.alpha) Add Whirlpool Hop functionality for BF recipes and Notification step in case of temp reduction (e.g. [Herman Process](https://www.brewersfriend.com/homebrew/recipe/view/1056155/hefeweizen-by-markus-herrmann-tu-munich))
+- 30.03.25: (1.1.0.alpha) Add Whirlpool Hop functionality for kbh, XML and BF recipes and Notification step in case of temp reduction (e.g. [Herman Process](https://www.brewersfriend.com/homebrew/recipe/view/1056155/hefeweizen-by-markus-herrmann-tu-munich))
 - 22.02.25: (1.0.1) Update requirement for Cooldown step name to allow alternative cooldown steps. Name must contain 'Cooldown'
 - 14.02.25: (1.0.0) Demo Version that can be used for recipe individualization as plugin -> Code modifications required
 - 12.07.21: New version that can be used with the native upload capabilities of my fork

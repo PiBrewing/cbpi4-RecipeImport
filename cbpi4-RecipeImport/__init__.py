@@ -115,17 +115,18 @@ class RecipeCreation(CBPiExtension):
                     pass
                 # get the hop addition times
                 c.execute(
-                    "SELECT Zeit, Name FROM Hopfengaben WHERE Vorderwuerze <> 1 AND SudID = ?",
+                    "SELECT Zeit, Name, Vorderwuerze FROM Hopfengaben WHERE Vorderwuerze <> 1 AND SudID = ?",
                     (Recipe_ID,),
                 )
                 hops = c.fetchall()
                 whirlpool = []
-                for hop in hops:
-                    if hop[0] < 0:
-                        whirlpool.append(hop)
-                for whirl in whirlpool:
-                    hops.remove(whirl)
+                #for hop in hops:
+                #    if hop[2] == 5: # whirlpool hops are defined with Vorderwuerze = 5 in the KBH database (Ausschlagen)
+                #        whirlpool.append(hop)
+                #for whirl in whirlpool:
+                #    hops.remove(whirl)
                 # get the misc addition times
+                
                 c.execute(
                     "SELECT Zugabedauer, Name FROM WeitereZutatenGaben WHERE Zeitpunkt = 1 AND SudID = ?",
                     (Recipe_ID,),
@@ -168,10 +169,12 @@ class RecipeCreation(CBPiExtension):
                     await self.create_step(step_string)
 
                 # if mashin_temp is not available, create a mashin step with the temp of the first mash step if addmashin is set to yes
+                step_temp_old = 0
                 for row in c.execute(
                     "SELECT Name, TempRast, DauerRast FROM Maischplan WHERE Typ <> 0 AND SudID = ?",
                     (Recipe_ID,),
                 ):
+                    step_temp = (float(row[1]))
                     if mashin_temp is None and self.addmashin == "Yes":
                         step_type = self.mashin if self.mashin != "" else "MashInStep"
                         step_string = {
@@ -181,9 +184,9 @@ class RecipeCreation(CBPiExtension):
                                 "Kettle": self.id,
                                 "Sensor": self.kettle.sensor,
                                 "Temp": (
-                                    str(int(row[1]))
+                                    str(step_temp)
                                     if self.TEMP_UNIT == "C"
-                                    else str(round(9.0 / 5.0 * int(row[1]) + 32))
+                                    else str(round(9.0 / 5.0 * step_temp + 32,1))
                                 ),
                                 "Timer": "0",
                                 "Notification": "Target temperature reached. Please add malt.",
@@ -193,6 +196,25 @@ class RecipeCreation(CBPiExtension):
                             "type": step_type,
                         }
                         await self.create_step(step_string)
+                    
+                    try:
+                        if float(step_temp) < float(step_temp_old):
+                            step_string = {
+                                "name": "Temp reduction!",
+                                "props": {
+                                    "AutoNext": "No",
+                                    "Kettle": self.id,
+                                    "Notification": f"Temperature reduction from {step_temp_old}  {self.TEMP_UNIT} to {step_temp} {self.TEMP_UNIT}. Please reduce the temperature manually.",
+                                },
+                                "status_text": "",
+                                "status": "I",
+                                "type": "NotificationStep",
+                            }
+
+                            await self.create_step(step_string)
+                    except Exception as e:
+                        logging.error(e)
+
 
                     # create the mash steps based on the recipe settings (time and temp)
                     step_type = self.mash if self.mash != "" else "MashStep"
@@ -214,6 +236,7 @@ class RecipeCreation(CBPiExtension):
                         "type": step_type,
                     }
                     await self.create_step(step_string)
+                    step_temp_old = step_temp
 
                 # MashOut -> Notification step that sends notification and waits for user input to move to next step (AutoNext=No)
                 if self.mashout == "NotificationStep":
@@ -263,6 +286,56 @@ class RecipeCreation(CBPiExtension):
                 }
 
                 await self.create_step(step_string)
+
+                # whirlpool hops are added at the end of the boil step
+                # and the kettle is cooled down to the whirlpool temperature
+                # the whirlpool temperature is set in the recipe and is used to cool down the kettle
+                
+                if Whirlpool != []:
+ 
+                    step_type = self.cooldown
+                    step_name = "CoolDown for Whirlpool Hop"
+                    cooldown_sensor = ""
+                    step_temp = float(Whirlpool)
+                    step_timer = ""
+
+                    if step_type.find("Cooldown") != -1 and self.cooldown != "":
+                        cooldown_sensor = (
+                                self.boilkettle.sensor
+                            )  # fall back to boilkettle sensor if no other sensor is specified
+                        step_string = {
+                            "name": "Cooldown for Whirlpool Hop",
+                            "props": {
+                                "Kettle": self.boilid,
+                                "Timer": step_timer,
+                                "Temp": step_temp,
+                                "Sensor": cooldown_sensor,
+                                "Actor": self.CoolDownActor,
+                            },
+                            "status_text": "",
+                            "status": "I",
+                            "type": step_type,
+                        }
+                        await self.create_step(step_string)
+
+                    if self.cooldown.find("Cooldown") != -1:
+                        notification = "Target Whirlpool temperature reached. Please add Whirlpool hops." 
+                        autonext = "No"
+                    else: 
+                        notification= f"Cool down to {step_temp} {self.TEMP_UNIT}. Then add Whirlpool hops."
+                        autonext = "No"
+                    step_string = {
+                        "name": "Whirlpool Hop",
+                        "props": {
+                            "AutoNext": autonext,
+                            "Kettle": self.id,
+                            "Notification": notification,
+                        },
+                        "status_text": "",
+                        "status": "I",
+                        "type": "NotificationStep",
+                    }
+                    await self.create_step(step_string)
 
                 # create a whirlpool step with optional cooldown
                 if not whirlpool:
@@ -620,6 +693,7 @@ class RecipeCreation(CBPiExtension):
                 # AutoMode is yes to start and stop automatic mode or each step
                 MashIn_Flag = True
                 step_kettle = self.id
+                step_temp_old = 0
                 for row in self.getSteps(Recipe_ID, "xml"):
                     step_name = str(row.get("name"))
                     step_timer = str(int(row.get("timer")))
@@ -670,6 +744,24 @@ class RecipeCreation(CBPiExtension):
                         step_type = self.mash if self.mash != "" else "MashStep"
                         Notification = ""
 
+                    try:
+                        if float(step_temp) < float(step_temp_old):
+                            step_string = {
+                                "name": "Temp reduction!",
+                                "props": {
+                                    "AutoNext": "No",
+                                    "Kettle": self.id,
+                                    "Notification": f"Temperature reduction from {step_temp_old}  {self.TEMP_UNIT} to {step_temp} {self.TEMP_UNIT}. Please reduce the temperature manually.",
+                                },
+                                "status_text": "",
+                                "status": "I",
+                                "type": "NotificationStep",
+                            }
+
+                            await self.create_step(step_string)
+                    except Exception as e:
+                        logging.error(e)
+
                     step_string = {
                         "name": step_name,
                         "props": {
@@ -686,6 +778,7 @@ class RecipeCreation(CBPiExtension):
                     }
 
                     await self.create_step(step_string)
+                    step_temp_old = step_temp
 
                 # MashOut -> Simple step that sends notification and waits for user input to move to next step (AutoNext=No)
                 if self.mashout == "NotificationStep":
@@ -741,6 +834,59 @@ class RecipeCreation(CBPiExtension):
                 }
 
                 await self.create_step(step_string)
+
+                # whirlpool hops are added at the end of the boil step
+                # and the kettle is cooled down to the whirlpool temperature
+                # the whirlpool temperature is set in the recipe and is used to cool down the kettle
+                
+                if Whirlpool != []:
+                    logging.info(
+                        "Whirlpool Temp: {}".format(Whirlpool)
+                    )
+
+                    step_type = self.cooldown
+                    step_name = "CoolDown for Whirlpool Hop"
+                    cooldown_sensor = ""
+                    step_temp = float(Whirlpool)
+                    step_timer = ""
+
+                    if step_type.find("Cooldown") != -1 and self.cooldown != "":
+                        cooldown_sensor = (
+                                self.boilkettle.sensor
+                            )  # fall back to boilkettle sensor if no other sensor is specified
+                        step_string = {
+                            "name": "Cooldown for Whirlpool Hop",
+                            "props": {
+                                "Kettle": self.boilid,
+                                "Timer": step_timer,
+                                "Temp": step_temp,
+                                "Sensor": cooldown_sensor,
+                                "Actor": self.CoolDownActor,
+                            },
+                            "status_text": "",
+                            "status": "I",
+                            "type": step_type,
+                        }
+                        await self.create_step(step_string)
+
+                    if self.cooldown.find("Cooldown") != -1:
+                        notification = "Target Whirlpool temperature reached. Please add Whirlpool hops." 
+                        autonext = "No"
+                    else: 
+                        notification= f"Cool down to {step_temp} {self.TEMP_UNIT}. Then add Whirlpool hops."
+                        autonext = "No"
+                    step_string = {
+                        "name": "Whirlpool Hop",
+                        "props": {
+                            "AutoNext": autonext,
+                            "Kettle": self.id,
+                            "Notification": notification,
+                        },
+                        "status_text": "",
+                        "status": "I",
+                        "type": "NotificationStep",
+                    }
+                    await self.create_step(step_string)
 
                 await self.create_Whirlpool_Cooldown()
 
@@ -1032,7 +1178,6 @@ class RecipeCreation(CBPiExtension):
 
                 await self.create_step(step_string)
 
-                # describe whirlpool hop addition
                 # whirlpool hops are added at the end of the boil step
                 # and the kettle is cooled down to the whirlpool temperature
                 # the whirlpool temperature is set in the recipe and is used to cool down the kettle
@@ -1069,12 +1214,14 @@ class RecipeCreation(CBPiExtension):
 
                     if self.cooldown.find("Cooldown") != -1:
                         notification = "Target Whirlpool temperature reached. Please add Whirlpool hops." 
+                        autonext = "No"
                     else: 
                         notification= f"Cool down to {step_temp} {self.TEMP_UNIT}. Then add Whirlpool hops."
+                        autonext = "No"
                     step_string = {
                         "name": "Whirlpool Hop",
                         "props": {
-                            "AutoNext": "No",
+                            "AutoNext": autonext,
                             "Kettle": self.id,
                             "Notification": notification,
                         },
@@ -1104,9 +1251,18 @@ class RecipeCreation(CBPiExtension):
             if recipe_type == "xml":
                 use = hop.find("USE").text
                 ## Hops which are not used in the boil step should not cause alerts
-                if use != "Aroma" and use != "Boil":
-                    continue
-                alerts.append([float(hop.find("TIME").text), hop.find("NAME").text])
+                if use == "Boil":
+                    alerts.append([float(hop.find("TIME").text), hop.find("NAME").text])
+                elif use == "Aroma":
+                    try:
+                        if self.TEMP_UNIT == "C":
+                            temp = float(hop.find("TEMP").text)
+                        else:
+                            temp = round(9.0 / 5.0 * float(hop.find("TEMP").text) + 32, 2)
+                    except:
+                        temp = 80 if self.TEMP_UNIT == "C" else 176
+                    whirlpool.append([temp, hop.find("NAME").text])
+
             elif recipe_type == "bf":
                 use = hop["use"]
                 if use == "Boil":
@@ -1122,7 +1278,11 @@ class RecipeCreation(CBPiExtension):
                     whirlpool.append([temp, hop["name"]])
 
             elif recipe_type == "kbh":
-                alerts.append([float(hop[0]), hop[1]])
+                if hop[2] != 5:
+                    alerts.append([float(hop[0]), hop[1]])
+                elif hop[2] == 5:
+                    temp = 80 if self.TEMP_UNIT == "C" else 176
+                    whirlpool.append([temp, hop[1]])
             elif recipe_type == "json":
                 alerts.append([float(hop["time"]), hop["name"]])
 
@@ -1160,6 +1320,7 @@ class RecipeCreation(CBPiExtension):
             except:
                 pass
         whirlpool_temps = sorted(whirlpool, key=lambda x: x[0], reverse=True)
+        logging.info("Whirlpool Hops: {}".format(whirlpool_temps))
         try:
             whirlpool_temp = whirlpool_temps[0][0]
         except:
