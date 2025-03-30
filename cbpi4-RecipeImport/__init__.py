@@ -841,10 +841,6 @@ class RecipeCreation(CBPiExtension):
                 BoilTime = bf_recipe["boilTime"]
                 mash_steps = bf_recipe["mash"]["steps"]
                 hops = bf_recipe["hops"]
-                #test= json.dumps(hops, indent=4)
-                #with open("brewfather.json", "w") as outfile:
-                #    outfile.write(test)
-                # parse the json data and extract the relevant information
 
                 try:
                     miscs = bf_recipe["miscs"]
@@ -876,6 +872,7 @@ class RecipeCreation(CBPiExtension):
                 # AutoMode is yes to start and stop automatic mode or each step
                 MashIn_Flag = True
                 step_kettle = self.id
+                step_temp_old = 0
                 for step in mash_steps:
                     try:
                         step_name = step["name"]
@@ -941,6 +938,23 @@ class RecipeCreation(CBPiExtension):
                     else:
                         step_type = self.mash if self.mash != "" else "MashStep"
                         Notification = ""
+                    try:
+                        if float(step_temp) < float(step_temp_old):
+                            step_string = {
+                                "name": "Temp reduction!",
+                                "props": {
+                                    "AutoNext": "No",
+                                    "Kettle": self.id,
+                                    "Notification": f"Temperature reduction from {step_temp_old}  {self.TEMP_UNIT} to {step_temp} {self.TEMP_UNIT}. Please reduce the temperature manually.",
+                                },
+                                "status_text": "",
+                                "status": "I",
+                                "type": "NotificationStep",
+                            }
+
+                            await self.create_step(step_string)
+                    except Exception as e:
+                        logging.error(e)
 
                     step_string = {
                         "name": step_name,
@@ -958,6 +972,8 @@ class RecipeCreation(CBPiExtension):
                     }
 
                     await self.create_step(step_string)
+                    step_temp_old = step_temp
+
 
                 # MashOut -> Simple step that sends notification and waits for user input to move to next step (AutoNext=No)
 
@@ -1029,14 +1045,13 @@ class RecipeCreation(CBPiExtension):
                     step_type = self.cooldown
                     step_name = "CoolDown for Whirlpool Hop"
                     cooldown_sensor = ""
-                    step_temp = ""
+                    step_temp = float(Whirlpool)
                     step_timer = ""
 
-                    if step_type.find("Cooldown") != -1:
+                    if step_type.find("Cooldown") != -1 and self.cooldown != "":
                         cooldown_sensor = (
                                 self.boilkettle.sensor
                             )  # fall back to boilkettle sensor if no other sensor is specified
-                        step_temp = float(Whirlpool)
                         step_string = {
                             "name": "Cooldown for Whirlpool Hop",
                             "props": {
@@ -1052,12 +1067,16 @@ class RecipeCreation(CBPiExtension):
                         }
                         await self.create_step(step_string)
 
+                    if self.cooldown.find("Cooldown") != -1:
+                        notification = "Target Whirlpool temperature reached. Please add Whirlpool hops." 
+                    else: 
+                        notification= f"Cool down to {step_temp} {self.TEMP_UNIT}. Then add Whirlpool hops."
                     step_string = {
                         "name": "Whirlpool Hop",
                         "props": {
                             "AutoNext": "No",
                             "Kettle": self.id,
-                            "Notification": "Target Whirlpool temperature reached. Please add Whirlpool hops.",
+                            "Notification": notification,
                         },
                         "status_text": "",
                         "status": "I",
