@@ -361,20 +361,10 @@ class RecipeCreation(CBPiExtension):
                 NotificationType.ERROR,
             )
 
-    def findMax(self, string):
-        self.path = self.cbpi.config_folder.get_upload_file("mmum.json")
-        e = json.load(open(self.path))
-        for idx in range(1, 20):
-            search_string = string.replace("%%", str(idx))
-            i = idx
-            if search_string not in e:
-                break
-        return i
-
     def getJsonMashin(self, id):
         self.path = self.cbpi.config_folder.get_upload_file("mmum.json")
         e = json.load(open(self.path))
-        return float(e["Infusion_Einmaischtemperatur"])
+        return float(e["Einmaischtemperatur"])
 
     # function to create a recipe from a MUMM json recipe file
     async def json_recipe_creation(self, Recipe_ID):
@@ -391,78 +381,44 @@ class RecipeCreation(CBPiExtension):
                     )
 
                 e = json.load(open(self.path))
+                logging.info(json.dumps(e, indent=4))
                 name = e["Name"]
                 boil_time = float(e["Kochzeit_Wuerze"])
+
+                logging.info(name)
+                logging.info(boil_time)
 
                 await self.create_recipe(name)
 
                 # get the hop addition times
                 hops = []
-                for idx in range(1, self.findMax("Hopfen_%%_Kochzeit")):
-                    hops_name = "%sg %s %s%% alpha" % (
-                        e["Hopfen_{}_Menge".format(idx)],
-                        e["Hopfen_{}_Sorte".format(idx)],
-                        e["Hopfen_{}_alpha".format(idx)],
-                    )
-                    if e["Hopfen_{}_Kochzeit".format(idx)].isnumeric():
-                        if (
-                            boil_time
-                            is not e["Hopfen_{}_Kochzeit".format(idx)].isnumeric()
-                        ):
-                            alert = float(e["Hopfen_{}_Kochzeit".format(idx)])
-                    elif (
-                        e["Hopfen_{}_Kochzeit".format(idx)] == "Whirlpool"
-                        or float(e["Hopfen_{}_Kochzeit".format(idx)]) < 0
-                    ):
-                        alert = float(0)
-                        hops_name = hops_name + " whirlpool"
-                    else:
-                        self.cbpi.notify(
-                            "No Number at Hoptime",
-                            "Please change json-File at Hopfen_{}_Kochzeit".format(idx),
-                            NotificationType.ERROR,
-                        )
-                        alert = float(0)
-                    hops.append({"name": hops_name, "time": alert})
-
                 firstHops = []
-                for idx in range(1, self.findMax("Hopfen_VWH_%%_Sorte")):
-                    firstHops_name = "%sg %s %s%% alpha" % (
-                        e["Hopfen_VWH_{}_Menge".format(idx)],
-                        e["Hopfen_VWH_{}_Sorte".format(idx)],
-                        e["Hopfen_VWH_{}_alpha".format(idx)],
-                    )
+                whirlpool_hops = []
 
-                    firstHops.append({"name": firstHops_name})
+                Hopfenliste=e["Hopfenkochen"]
+                for Hopfen in Hopfenliste:
+                    #logging.error(Hopfen)
+                    if Hopfen["Typ"] == "Standard":
+                        hops.append({"name": Hopfen["Sorte"], "time": Hopfen["Zeit"]})
+                    if Hopfen["Typ"] == "Vorderwuerze":
+                        firstHops.append({"name": Hopfen["Sorte"]})
+                    if Hopfen["Typ"] == "Whirlpool":
+                        whirlpool_hops.append({"name": Hopfen["Sorte"]})
+ 
+                #logging.error(hops)
+                #logging.error(firstHops)
+                #logging.error(whirlpool_hops)
 
                 FirstWort = self.getFirstWort(firstHops, "json")
-
+                #logging.error(FirstWort)
                 miscs = []
-                for idx in range(1, self.findMax("WeitereZutat_Wuerze_%%_Kochzeit")):
-                    miscs_name = "%s%s %s" % (
-                        e["WeitereZutat_Wuerze_{}_Menge".format(idx)],
-                        e["WeitereZutat_Wuerze_{}_Einheit".format(idx)],
-                        e["WeitereZutat_Wuerze_{}_Name".format(idx)],
-                    )
-                    if e["WeitereZutat_Wuerze_{}_Kochzeit".format(idx)].isnumeric():
-                        alert = float(e["WeitereZutat_Wuerze_{}_Kochzeit".format(idx)])
-                    elif (
-                        e["WeitereZutat_Wuerze_{}_Kochzeit".format(idx)] == "Whirlpool"
-                        or float(e["WeitereZutat_Wuerze_{}_Kochzeit".format(idx)]) < 0
-                    ):
-                        alert = float(0)
-                        miscs_name = miscs_name + " whirlpool"
-                    else:
-                        self.api.notify(
-                            headline="No Number at Hoptime",
-                            message="Please change json-File at WeitereZutat_Wuerze_{}_Kochzeit".format(
-                                idx
-                            ),
-                            type="danger",
-                        )
-                        alert = float(0)
-                    miscs.append({"name": miscs_name, "time": alert})
-
+                try:
+                    weitere_zutaten=e["Gewuerze_etc"]
+                    for zutat in weitere_zutaten:
+                        miscs.append({"name": zutat["Name"], "time": zutat["Kochzeit"]})
+                #logging.error(miscs)
+                except:
+                    pass
                 # Mash Steps -> first step is different as it heats up to defined temp and stops with notification to add malt
                 # AutoMode is yes to start and stop automatic mode or each step
                 MashIn_Flag = True
@@ -926,24 +882,28 @@ class RecipeCreation(CBPiExtension):
         elif recipe_type == "json":
             self.path = self.cbpi.config_folder.get_upload_file("mmum.json")
             e = json.load(open(self.path))
-            for idx in range(1, self.findMax("Infusion_Rastzeit%%")):
+            Rasten= e["Rasten"]
+            idx = 1
+            for Rast in Rasten:
                 if self.cbpi.config.get("TEMP_UNIT", "C") == "C":
-                    temp = float(e["Infusion_Rasttemperatur{}".format(idx)])
+                    temp = float(Rast["Temperatur"])
                 else:
                     temp = round(
-                        9.0 / 5.0 * float(e["Infusion_Rasttemperatur{}".format(idx)])
+                        9.0 / 5.0 * float(Rast["Temperatur"])
                         + 32,
                         2,
                     )
 
+                time= float(Rast["Zeit"])
                 steps.append(
                     {
                         "name": "Rast {}".format(idx),
                         "temp": temp,
-                        "timer": float(e["Infusion_Rastzeit{}".format(idx)]),
+                        "timer": time,
                     }
                 )
-
+                idx += 1
+            logging.info(steps)
         return steps
 
     async def bf_recipe_creation(self, Recipe_ID):
