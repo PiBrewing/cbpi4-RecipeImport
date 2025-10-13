@@ -14,6 +14,7 @@
 
 ## Changelog:
 
+- 13.10.25: (1.1.0.a5) Add pyproject.toml file to support pip25.3+
 - 04.04.25: (1.1.0.alpha) Add Whirlpool Hops and Notification for temp reduction also for MMuM json recipes
 - 31.03.25: (1.1.0.alpha) Fix MMuM json import to most recent version. -> Whirlpool hops and Hermann process to be added in next step
 - 30.03.25: (1.1.0.alpha) Add Whirlpool Hop functionality for kbh, XML and BF recipes and Notification step in case of temp reduction (e.g. [Hermann Process](https://www.brewersfriend.com/homebrew/recipe/view/1056155/hefeweizen-by-markus-herrmann-tu-munich))
